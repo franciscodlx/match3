@@ -1,7 +1,17 @@
-import { useCallback, useRef, useState } from 'react';
+import { useCallback, useEffect, useRef, useState } from 'react';
 import { Pressable, StyleSheet, Text, View, useWindowDimensions } from 'react-native';
 import { Canvas } from '@shopify/react-native-skia';
-import Animated, { Easing, FadeIn, FadeOut, ZoomIn, withSequence, withTiming } from 'react-native-reanimated';
+import Animated, {
+  Easing,
+  FadeIn,
+  FadeOut,
+  FadeOutUp,
+  ZoomIn,
+  useAnimatedStyle,
+  useSharedValue,
+  withSequence,
+  withTiming,
+} from 'react-native-reanimated';
 import { GestureDetector, usePanGesture } from 'react-native-gesture-handler';
 import {
   SIZE,
@@ -16,6 +26,8 @@ import {
   type Level,
 } from '@match3/game-core';
 import { PIECE_COLORS, colors as theme } from '../theme';
+import { Effects, type EffectsHandle } from './Effects';
+import { feedback, feedbackSettings, initFeedback } from './feedback';
 import { Goals } from './Goals';
 import { Jelly } from './Jelly';
 import { Piece, type PieceAnim } from './Piece';
@@ -34,6 +46,7 @@ type Props = {
 
 type Hud = { score: number; movesLeft: number; combo: number; comboKey: number; collected: number[]; jelly: number[] };
 type Ending = { state: GameState; stars: number; perf: FpsSummary };
+type Popup = { key: number; x: number; y: number; points: number };
 const fmt = (n: number) => n.toLocaleString('es-MX');
 
 export function GameScreen({ level, hasNext, onRetry, onNext, onSkip }: Props) {
@@ -70,6 +83,28 @@ export function GameScreen({ level, hasNext, onRetry, onNext, onSkip }: Props) {
   });
   const [ending, setEnding] = useState<Ending | null>(null);
   const { fps, summarize } = useFpsMeter();
+  const effects = useRef<EffectsHandle>(null);
+  const [popups, setPopups] = useState<Popup[]>([]);
+  const popupKey = useRef(0);
+  const [muted, setMuted] = useState(() => !feedbackSettings.get().sound);
+  useEffect(() => initFeedback(), []);
+
+  // Board shake for big blasts (UI thread).
+  const shake = useSharedValue(0);
+  const shakeStyle = useAnimatedStyle(() => ({ transform: [{ translateX: shake.value }] }));
+  const doShake = (px: number) => {
+    shake.value = withSequence(
+      ...[px, -px, px * 0.6, -px * 0.6, px * 0.3, 0].map((v) => withTiming(v, { duration: 40 })),
+    );
+  };
+  const showPoints = (cells: Cell[], points: number) => {
+    if (!cells.length || points <= 0) return;
+    const x = (cells.reduce((s, c) => s + c.c, 0) / cells.length + 0.5) * cell;
+    const y = (cells.reduce((s, c) => s + c.r, 0) / cells.length + 0.5) * cell;
+    const key = ++popupKey.current;
+    setPopups((p) => [...p, { key, x, y, points }]);
+    setTimeout(() => setPopups((p) => p.filter((q) => q.key !== key)), 650);
+  };
 
   // ── Animation primitives (JS decides, UI thread animates) ──
   const moveTo = (id: number, r: number, c: number, ms: number) => {
@@ -92,9 +127,11 @@ export function GameScreen({ level, hasNext, onRetry, onNext, onSkip }: Props) {
       const idB = before.board.grid[b.r][b.c];
       moveTo(idA, b.r, b.c, T.swap);
       moveTo(idB, a.r, a.c, T.swap);
+      feedback.swap();
       await wait(T.swap);
 
       if (!turn.valid) {
+        feedback.invalid();
         moveTo(idA, a.r, a.c, T.swap);
         moveTo(idB, b.r, b.c, T.swap);
         await wait(T.swap);
@@ -103,7 +140,29 @@ export function GameScreen({ level, hasNext, onRetry, onNext, onSkip }: Props) {
 
       setHud((h) => ({ ...h, movesLeft: turn.state.movesLeft }));
       let prev: Board = turn.swapped!;
-      for (const step of turn.steps) {
+      for (const [i, step] of turn.steps.entries()) {
+        // Juice first, so sound, buzz and particles land with the pieces vanishing.
+        const fired = step.fired.map((f) => f.kind);
+        if (i === 0 && step.runs.length === 0) {
+          // Special swap: the two swapped specials go off together at the landing cell.
+          for (const at of [a, b]) {
+            const id = prev.grid[at.r][at.c];
+            fired.push(prev.kinds[id]);
+            effects.current?.blast(b.r, b.c, prev.kinds[id]);
+          }
+        }
+        for (const f of step.fired) effects.current?.blast(f.cell.r, f.cell.c, f.kind);
+        effects.current?.burst(
+          step.cleared.map(({ r, c }) => {
+            const id = prev.grid[r][c];
+            return { r, c, color: prev.kinds[id] === 'colorBomb' ? -1 : prev.colors[id] };
+          }),
+        );
+        feedback.step(step.combo, fired, step.created.length);
+        if (fired.includes('colorBomb')) doShake(9);
+        else if (fired.includes('bomb')) doShake(6);
+        else if (fired.length) doShake(3);
+        showPoints(step.cleared, step.points);
         scaleAll(step.cleared.map(({ r, c }) => prev.grid[r][c]), 0, T.clear);
         setHud((h) => ({
           ...h,
@@ -149,6 +208,14 @@ export function GameScreen({ level, hasNext, onRetry, onNext, onSkip }: Props) {
       game.current = turn.state;
       setHud((h) => ({ ...h, score: turn.state.score, combo: 0 }));
       if (turn.state.status !== 'playing') {
+        if (turn.state.status === 'won') {
+          feedback.win();
+          // Confetti: a burst from a random third of the board, in every color.
+          const cells = Array.from({ length: SIZE * SIZE }, (_, k) => ({ r: Math.floor(k / SIZE), c: k % SIZE }))
+            .filter(() => Math.random() < 0.33)
+            .map((c) => ({ ...c, color: Math.floor(Math.random() * PIECE_COLORS.length) }));
+          effects.current?.burst(cells);
+        } else feedback.lose();
         await wait(300);
         setEnding({ state: turn.state, stars: starsFor(turn.state), perf: summarize() });
       }
@@ -189,10 +256,17 @@ export function GameScreen({ level, hasNext, onRetry, onNext, onSkip }: Props) {
           <Goals goals={goals} />
           <Text style={styles.points}>{fmt(hud.score)} puntos</Text>
         </View>
-        <View style={styles.stat}>
-          <Text style={styles.statLabel}>Movs</Text>
+        <Pressable
+          style={styles.stat}
+          onLongPress={() => {
+            // Long-press the moves box to mute/unmute sound (a real settings screen comes with the map).
+            feedbackSettings.set({ sound: muted });
+            setMuted(!muted);
+          }}
+        >
+          <Text style={styles.statLabel}>Movs {muted ? '🔇' : ''}</Text>
           <Text style={[styles.statValue, hud.movesLeft <= 3 && { color: theme.bad }]}>{hud.movesLeft}</Text>
-        </View>
+        </Pressable>
       </View>
 
       <View style={styles.comboSlot}>
@@ -204,7 +278,7 @@ export function GameScreen({ level, hasNext, onRetry, onNext, onSkip }: Props) {
       </View>
 
       <GestureDetector gesture={pan}>
-        <View style={[styles.board, { width: boardPx, height: boardPx }]}>
+        <Animated.View style={[styles.board, { width: boardPx, height: boardPx }, shakeStyle]}>
           <Canvas style={{ width: boardPx, height: boardPx }}>
             <Jelly layers={hud.jelly} cell={cell} />
             {pieceColors.map((color, id) => (
@@ -219,8 +293,21 @@ export function GameScreen({ level, hasNext, onRetry, onNext, onSkip }: Props) {
                 register={register}
               />
             ))}
+            <Effects ref={effects} cell={cell} size={boardPx} />
           </Canvas>
-        </View>
+          <View pointerEvents="none" style={StyleSheet.absoluteFill}>
+            {popups.map((p) => (
+              <Animated.Text
+                key={p.key}
+                entering={ZoomIn.duration(140)}
+                exiting={FadeOutUp.duration(380)}
+                style={[styles.popup, { left: p.x - 60, top: p.y - 14 }]}
+              >
+                +{fmt(p.points)}
+              </Animated.Text>
+            ))}
+          </View>
+        </Animated.View>
       </GestureDetector>
 
       <Text style={styles.fps}>{fps} fps</Text>
@@ -281,6 +368,17 @@ const styles = StyleSheet.create({
   comboSlot: { height: 56, justifyContent: 'center' },
   combo: { color: '#FFB400', fontSize: 26, fontWeight: '900' },
   board: { backgroundColor: theme.surface, borderRadius: 16, overflow: 'hidden' },
+  popup: {
+    position: 'absolute',
+    width: 120,
+    textAlign: 'center',
+    color: '#FFFFFF',
+    fontSize: 20,
+    fontWeight: '900',
+    textShadowColor: 'rgba(0,0,0,0.55)',
+    textShadowRadius: 4,
+    textShadowOffset: { width: 0, height: 1 },
+  },
   fps: { color: theme.textDim, fontSize: 12, marginTop: 12, fontVariant: ['tabular-nums'] },
   overlay: { ...StyleSheet.absoluteFill, backgroundColor: 'rgba(8,10,20,0.78)', alignItems: 'center', justifyContent: 'center', padding: 24 },
   card: { backgroundColor: theme.surface, borderRadius: 20, padding: 24, alignSelf: 'stretch', gap: 8 },
