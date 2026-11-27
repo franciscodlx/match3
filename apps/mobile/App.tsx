@@ -1,26 +1,35 @@
+import { useState } from 'react';
 import { StatusBar } from 'expo-status-bar';
-import { StyleSheet, Text, View } from 'react-native';
+import { StyleSheet } from 'react-native';
 import { GestureHandlerRootView } from 'react-native-gesture-handler';
-import { SIZE, COLORS } from '@match3/game-core';
+import { GameScreen } from './src/game/GameScreen';
+import { LEVELS } from './src/levels';
+import { colors } from './src/theme';
 
-// Iteration 1.1: shell only. The game screen lands in 1.3.
+// Iteration 1: straight into the game. The level map (and Expo Router) arrive in iteration 3.
 export default function App() {
+  const [levelIndex, setLevelIndex] = useState(0);
+  const [attempt, setAttempt] = useState(0);
+  const level = LEVELS[levelIndex];
+
   return (
     <GestureHandlerRootView style={styles.root}>
-      <View style={styles.center}>
-        <Text style={styles.title}>Match3</Text>
-        <Text style={styles.sub}>
-          Iteración 1 · tablero {SIZE}x{SIZE}, {COLORS} tipos de pieza
-        </Text>
-      </View>
+      <GameScreen
+        // A new key remounts the screen: fresh game from the level's seed.
+        key={`${level.id}-${attempt}`}
+        level={level}
+        hasNext={levelIndex < LEVELS.length - 1}
+        onRetry={() => setAttempt((n) => n + 1)}
+        onNext={() => {
+          setLevelIndex((i) => Math.min(i + 1, LEVELS.length - 1));
+          setAttempt(0);
+        }}
+      />
       <StatusBar style="light" />
     </GestureHandlerRootView>
   );
 }
 
 const styles = StyleSheet.create({
-  root: { flex: 1, backgroundColor: '#0F1220' },
-  center: { flex: 1, alignItems: 'center', justifyContent: 'center', gap: 8 },
-  title: { color: '#fff', fontSize: 34, fontWeight: '800' },
-  sub: { color: '#9AA3C0', fontSize: 15 },
+  root: { flex: 1, backgroundColor: colors.bg },
 });
