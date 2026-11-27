@@ -31,7 +31,8 @@
     "web": "expo start --web",
     "test": "tsc --noEmit",
     "lint": "expo lint",
-    "sounds": "node --experimental-strip-types scripts/gen-sounds.ts"
+    "sounds": "node --experimental-strip-types scripts/gen-sounds.ts",
+    "playlog": "node --experimental-strip-types scripts/playlog-server.ts"
   },
   "private": true
 }

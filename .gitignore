@@ -5,3 +5,4 @@ apps/*/android
 .expo
 apps/*/.expo
 build/
+playtest/

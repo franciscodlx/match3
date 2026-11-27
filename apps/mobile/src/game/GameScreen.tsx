@@ -9,12 +9,14 @@ import Animated, {
   ZoomIn,
   useAnimatedStyle,
   useSharedValue,
+  withRepeat,
   withSequence,
   withTiming,
 } from 'react-native-reanimated';
 import { GestureDetector, usePanGesture } from 'react-native-gesture-handler';
 import {
   SIZE,
+  findValidSwaps,
   goalProgress,
   newGame,
   playSwap,
@@ -31,9 +33,11 @@ import { feedback, feedbackSettings, initFeedback } from './feedback';
 import { Goals } from './Goals';
 import { Jelly } from './Jelly';
 import { Piece, type PieceAnim } from './Piece';
+import { playlog, playlogEnabled, type FeelLog } from './playlog';
 import { useFpsMeter, type FpsSummary } from './useFpsMeter';
 
 const T = { swap: 140, clear: 170, fallBase: 140, fallPerRow: 40, reshuffle: 220 };
+const HINT_AFTER_MS = 5000; // idle time before a valid move starts pulsing
 const wait = (ms: number) => new Promise((r) => setTimeout(r, ms));
 
 type Props = {
@@ -45,7 +49,7 @@ type Props = {
 };
 
 type Hud = { score: number; movesLeft: number; combo: number; comboKey: number; collected: number[]; jelly: number[] };
-type Ending = { state: GameState; stars: number; perf: FpsSummary };
+type Ending = { state: GameState; stars: number; perf: FpsSummary; feel?: FeelLog['feel'] };
 type Popup = { key: number; x: number; y: number; points: number };
 const fmt = (n: number) => n.toLocaleString('es-MX');
 
@@ -89,6 +93,38 @@ export function GameScreen({ level, hasNext, onRetry, onNext, onSkip }: Props) {
   const [muted, setMuted] = useState(() => !feedbackSettings.get().sound);
   useEffect(() => initFeedback(), []);
 
+  // ── Hint: after a few idle seconds, two pieces that make a match pulse until the next move ──
+  const hint = useRef<{ timer?: ReturnType<typeof setTimeout>; ids: number[] }>({ ids: [] });
+  const clearHint = () => {
+    clearTimeout(hint.current.timer);
+    for (const id of hint.current.ids) anims.current[id].s.value = withTiming(1, { duration: 120 });
+    hint.current = { ids: [] };
+  };
+  const scheduleHint = () => {
+    clearHint();
+    hint.current.timer = setTimeout(() => {
+      const g = game.current;
+      if (busy.current || g.status !== 'playing') return;
+      const options = findValidSwaps(g.board);
+      if (!options.length) return;
+      const [a, b] = options[Math.floor(Math.random() * options.length)];
+      hint.current.ids = [g.board.grid[a.r][a.c], g.board.grid[b.r][b.c]];
+      for (const id of hint.current.ids)
+        anims.current[id].s.value = withRepeat(
+          withSequence(withTiming(1.14, { duration: 320 }), withTiming(0.94, { duration: 320 })),
+          -1,
+          true,
+        );
+    }, HINT_AFTER_MS);
+  };
+  useEffect(() => {
+    scheduleHint();
+    return () => clearTimeout(hint.current.timer);
+    // eslint-disable-next-line react-hooks/exhaustive-deps -- once on mount; later calls come from onSwipe
+  }, []);
+  // Playtest stats for this attempt; the clock starts on the first accepted move.
+  const stats = useRef({ startedAt: 0, maxCombo: 0, created: 0, fired: 0, invalid: 0, reshuffles: 0 });
+
   // Board shake for big blasts (UI thread).
   const shake = useSharedValue(0);
   const shakeStyle = useAnimatedStyle(() => ({ transform: [{ translateX: shake.value }] }));
@@ -120,6 +156,7 @@ export function GameScreen({ level, hasNext, onRetry, onNext, onSkip }: Props) {
   const onSwipe = async (a: Cell, b: Cell) => {
     if (busy.current || game.current.status !== 'playing') return;
     busy.current = true;
+    clearHint();
     try {
       const before = game.current;
       const turn = playSwap(before, a, b);
@@ -131,6 +168,7 @@ export function GameScreen({ level, hasNext, onRetry, onNext, onSkip }: Props) {
       await wait(T.swap);
 
       if (!turn.valid) {
+        stats.current.invalid++;
         feedback.invalid();
         moveTo(idA, a.r, a.c, T.swap);
         moveTo(idB, b.r, b.c, T.swap);
@@ -139,6 +177,14 @@ export function GameScreen({ level, hasNext, onRetry, onNext, onSkip }: Props) {
       }
 
       setHud((h) => ({ ...h, movesLeft: turn.state.movesLeft }));
+      const st = stats.current;
+      if (!st.startedAt) st.startedAt = Date.now();
+      st.maxCombo = Math.max(st.maxCombo, turn.steps.length);
+      st.reshuffles += turn.reshuffled ? 1 : 0;
+      for (const step of turn.steps) {
+        st.created += step.created.length;
+        st.fired += step.fired.length;
+      }
       let prev: Board = turn.swapped!;
       for (const [i, step] of turn.steps.entries()) {
         // Juice first, so sound, buzz and particles land with the pieces vanishing.
@@ -217,10 +263,32 @@ export function GameScreen({ level, hasNext, onRetry, onNext, onSkip }: Props) {
           effects.current?.burst(cells);
         } else feedback.lose();
         await wait(300);
-        setEnding({ state: turn.state, stars: starsFor(turn.state), perf: summarize() });
+        const end = turn.state;
+        const perf = summarize();
+        playlog({
+          type: 'game',
+          level: level.id,
+          seed: String(level.seed),
+          status: end.status as 'won' | 'lost',
+          moves: level.moves,
+          movesUsed: level.moves - end.movesLeft,
+          score: end.score,
+          stars: starsFor(end),
+          seconds: Math.round((Date.now() - st.startedAt) / 1000),
+          maxCombo: st.maxCombo,
+          specialsCreated: st.created,
+          specialsFired: st.fired,
+          invalidSwaps: st.invalid,
+          reshuffles: st.reshuffles,
+          goals: goalProgress(end).map((g) => ({ type: g.goal.type, current: g.current, target: g.target })),
+          avgFps: perf.avgFps,
+          minFps: perf.minFps,
+        });
+        setEnding({ state: end, stars: starsFor(end), perf });
       }
     } finally {
       busy.current = false;
+      if (game.current.status === 'playing') scheduleHint();
     }
   };
 
@@ -337,6 +405,24 @@ export function GameScreen({ level, hasNext, onRetry, onNext, onSkip }: Props) {
               Rendimiento: prom {ending.perf.avgFps} fps · mín {ending.perf.minFps} · frames lentos {ending.perf.slowPct}% ·{' '}
               {ending.perf.seconds} s
             </Text>
+            {playlogEnabled && (
+              <View style={styles.feelRow}>
+                <Text style={styles.cardDim}>¿Cómo se sintió?</Text>
+                {(['fácil', 'justo', 'difícil'] as const).map((feel) => (
+                  <Pressable
+                    key={feel}
+                    style={[styles.feelBtn, ending.feel === feel && styles.feelOn]}
+                    onPress={() => {
+                      if (ending.feel) return;
+                      playlog({ type: 'feel', level: level.id, status: ending.state.status as 'won' | 'lost', feel });
+                      setEnding({ ...ending, feel });
+                    }}
+                  >
+                    <Text style={styles.feelText}>{feel}</Text>
+                  </Pressable>
+                ))}
+              </View>
+            )}
             <View style={styles.cardActions}>
               <Pressable style={[styles.btn, styles.btnGhost]} onPress={onRetry}>
                 <Text style={styles.btnText}>Reintentar</Text>
@@ -386,6 +472,10 @@ const styles = StyleSheet.create({
   cardScore: { color: theme.good, fontSize: 22, fontWeight: '700', textAlign: 'center' },
   cardDim: { color: theme.textDim, fontSize: 14, textAlign: 'center' },
   cardPerf: { color: theme.textDim, fontSize: 12, textAlign: 'center', marginTop: 8 },
+  feelRow: { flexDirection: 'row', alignItems: 'center', justifyContent: 'center', gap: 6, marginTop: 8 },
+  feelBtn: { backgroundColor: theme.surfaceHi, paddingHorizontal: 12, paddingVertical: 6, borderRadius: 14 },
+  feelOn: { backgroundColor: theme.accent },
+  feelText: { color: theme.text, fontSize: 13, fontWeight: '600' },
   cardActions: { flexDirection: 'row', gap: 12, justifyContent: 'center', marginTop: 12 },
   btn: { backgroundColor: theme.accent, paddingHorizontal: 20, paddingVertical: 12, borderRadius: 24 },
   btnGhost: { backgroundColor: theme.surfaceHi },
