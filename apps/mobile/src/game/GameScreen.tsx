@@ -200,7 +200,11 @@ export function GameScreen({ level, hasNext, onRetry, onNext }: Props) {
             <Text style={styles.cardScore}>{ending.score.toLocaleString('es-MX')} puntos</Text>
             <Text style={styles.cardDim}>
               Meta {level.targetScore.toLocaleString('es-MX')} ·{' '}
-              {ending.status === 'won' ? `te sobraron ${ending.movesLeft} movimientos` : `faltaron ${(level.targetScore - ending.score).toLocaleString('es-MX')}`}
+              {ending.status === 'won'
+                ? ending.movesLeft === 1
+                  ? 'te sobró 1 movimiento'
+                  : `te sobraron ${ending.movesLeft} movimientos`
+                : `faltaron ${(level.targetScore - ending.score).toLocaleString('es-MX')}`}
             </Text>
             <Text style={styles.cardPerf}>
               Rendimiento: prom {ending.perf.avgFps} fps · mín {ending.perf.minFps} · frames lentos {ending.perf.slowPct}% ·{' '}
