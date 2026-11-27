@@ -4,7 +4,7 @@
 import type { Rng } from './rng.ts';
 
 export const SIZE = 8;
-export const COLORS = 6;
+export const COLORS = 6; // max piece colors; a level may use fewer (easier)
 
 export type Cell = { r: number; c: number };
 export type Grid = number[][]; // grid[r][c] = pieceId
@@ -15,9 +15,9 @@ export type Kind = 'normal' | 'lineH' | 'lineV' | 'bomb' | 'colorBomb';
 /** colors[pieceId], kinds[pieceId]. A color bomb keeps a color slot but never matches by color. */
 export type Board = { grid: Grid; colors: number[]; kinds: Kind[] };
 
-const randColor = (rng: Rng) => Math.floor(rng() * COLORS);
+const randColor = (rng: Rng, n: number) => Math.floor(rng() * n);
 
-export function createBoard(rng: Rng): Board {
+export function createBoard(rng: Rng, numColors = COLORS): Board {
   const grid: Grid = [];
   const colors: number[] = [];
   for (let r = 0; r < SIZE; r++) {
@@ -25,7 +25,7 @@ export function createBoard(rng: Rng): Board {
     for (let c = 0; c < SIZE; c++) {
       let color: number;
       do {
-        color = randColor(rng);
+        color = randColor(rng, numColors);
       } while (
         (c >= 2 && colors[grid[r][c - 1]] === color && colors[grid[r][c - 2]] === color) ||
         (r >= 2 && colors[grid[r - 1][c]] === color && colors[grid[r - 2][c]] === color)
@@ -111,7 +111,7 @@ export type Move = { id: number; col: number; fromRow: number; toRow: number; sp
  * Cleared piece ids are recycled as the new pieces (spawned above the board,
  * fromRow < 0), so the piece count stays constant at SIZE*SIZE. Spawned pieces are normal.
  */
-export function collapse(b: Board, cleared: Cell[], rng: Rng): { board: Board; moves: Move[] } {
+export function collapse(b: Board, cleared: Cell[], rng: Rng, numColors = COLORS): { board: Board; moves: Move[] } {
   const grid = b.grid.map((row) => [...row]);
   const colors = [...b.colors];
   const kinds = [...b.kinds];
@@ -134,7 +134,7 @@ export function collapse(b: Board, cleared: Cell[], rng: Rng): { board: Board; m
     // target is now the lowest empty row; fill upwards with recycled ids.
     recycled.forEach((id, i) => {
       const toRow = target - i;
-      colors[id] = randColor(rng);
+      colors[id] = randColor(rng, numColors);
       kinds[id] = 'normal';
       grid[toRow][c] = id;
       moves.push({ id, col: c, fromRow: -1 - i, toRow, spawned: true });
@@ -158,9 +158,9 @@ export function hasValidSwap(b: Board): boolean {
  * New colors for the same piece ids (positions unchanged), until the board has no
  * matches and at least one valid swap. Used at game start and when the player is stuck.
  */
-export function reshuffle(b: Board, rng: Rng): Board {
+export function reshuffle(b: Board, rng: Rng, numColors = COLORS): Board {
   for (;;) {
-    const fresh = createBoard(rng);
+    const fresh = createBoard(rng, numColors);
     const colors = [...b.colors];
     for (let r = 0; r < SIZE; r++) for (let c = 0; c < SIZE; c++) colors[b.grid[r][c]] = colorAt(fresh, r, c);
     const next = { grid: b.grid, colors, kinds: b.kinds };

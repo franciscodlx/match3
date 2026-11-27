@@ -3,8 +3,21 @@ import { Pressable, StyleSheet, Text, View, useWindowDimensions } from 'react-na
 import { Canvas } from '@shopify/react-native-skia';
 import Animated, { Easing, FadeIn, FadeOut, ZoomIn, withSequence, withTiming } from 'react-native-reanimated';
 import { GestureDetector, usePanGesture } from 'react-native-gesture-handler';
-import { SIZE, newGame, playSwap, type Board, type Cell, type GameState, type Kind, type Level } from '@match3/game-core';
+import {
+  SIZE,
+  goalProgress,
+  newGame,
+  playSwap,
+  starsFor,
+  type Board,
+  type Cell,
+  type GameState,
+  type Kind,
+  type Level,
+} from '@match3/game-core';
 import { PIECE_COLORS, colors as theme } from '../theme';
+import { Goals } from './Goals';
+import { Jelly } from './Jelly';
 import { Piece, type PieceAnim } from './Piece';
 import { useFpsMeter, type FpsSummary } from './useFpsMeter';
 
@@ -16,12 +29,14 @@ type Props = {
   hasNext: boolean;
   onRetry: () => void;
   onNext: () => void;
+  onSkip: () => void; // dev only
 };
 
-type Hud = { score: number; movesLeft: number; combo: number; comboKey: number };
-type Ending = { status: 'won' | 'lost'; score: number; movesLeft: number; perf: FpsSummary };
+type Hud = { score: number; movesLeft: number; combo: number; comboKey: number; collected: number[]; jelly: number[] };
+type Ending = { state: GameState; stars: number; perf: FpsSummary };
+const fmt = (n: number) => n.toLocaleString('es-MX');
 
-export function GameScreen({ level, hasNext, onRetry, onNext }: Props) {
+export function GameScreen({ level, hasNext, onRetry, onNext, onSkip }: Props) {
   const { width } = useWindowDimensions();
   const boardPx = Math.min(width - 24, 480);
   const cell = boardPx / SIZE;
@@ -45,7 +60,14 @@ export function GameScreen({ level, hasNext, onRetry, onNext }: Props) {
     anims.current[id] = a;
   }, []);
 
-  const [hud, setHud] = useState<Hud>({ score: 0, movesLeft: level.moves, combo: 0, comboKey: 0 });
+  const [hud, setHud] = useState<Hud>({
+    score: 0,
+    movesLeft: level.moves,
+    combo: 0,
+    comboKey: 0,
+    collected: initial.collected,
+    jelly: initial.jelly,
+  });
   const [ending, setEnding] = useState<Ending | null>(null);
   const { fps, summarize } = useFpsMeter();
 
@@ -86,6 +108,8 @@ export function GameScreen({ level, hasNext, onRetry, onNext }: Props) {
         setHud((h) => ({
           ...h,
           score: h.score + step.points,
+          collected: step.collected,
+          jelly: step.jelly,
           combo: step.combo,
           comboKey: step.combo > 1 ? h.comboKey + 1 : h.comboKey,
         }));
@@ -126,7 +150,7 @@ export function GameScreen({ level, hasNext, onRetry, onNext }: Props) {
       setHud((h) => ({ ...h, score: turn.state.score, combo: 0 }));
       if (turn.state.status !== 'playing') {
         await wait(300);
-        setEnding({ status: turn.state.status, score: turn.state.score, movesLeft: turn.state.movesLeft, perf: summarize() });
+        setEnding({ state: turn.state, stars: starsFor(turn.state), perf: summarize() });
       }
     } finally {
       busy.current = false;
@@ -150,23 +174,20 @@ export function GameScreen({ level, hasNext, onRetry, onNext }: Props) {
     },
   });
 
-  const progress = Math.min(1, hud.score / level.targetScore);
+  const goals = goalProgress({ level, score: hud.score, collected: hud.collected, jelly: hud.jelly });
 
   return (
     <View style={styles.root}>
       <View style={styles.header}>
-        <View style={styles.stat}>
+        {/* Dev builds: tap the level box to jump to the next level (no level map until iteration 3). */}
+        <Pressable style={styles.stat} disabled={!__DEV__} onPress={onSkip}>
           <Text style={styles.statLabel}>Nivel</Text>
           <Text style={styles.statValue}>{level.id}</Text>
-        </View>
+        </Pressable>
         <View style={[styles.stat, styles.statWide]}>
-          <Text style={styles.statLabel}>
-            Puntos · meta {level.targetScore.toLocaleString('es-MX')}
-          </Text>
-          <Text style={styles.statValue}>{hud.score.toLocaleString('es-MX')}</Text>
-          <View style={styles.bar}>
-            <View style={[styles.barFill, { width: `${progress * 100}%` }]} />
-          </View>
+          <Text style={styles.statLabel}>Objetivos</Text>
+          <Goals goals={goals} />
+          <Text style={styles.points}>{fmt(hud.score)} puntos</Text>
         </View>
         <View style={styles.stat}>
           <Text style={styles.statLabel}>Movs</Text>
@@ -185,6 +206,7 @@ export function GameScreen({ level, hasNext, onRetry, onNext }: Props) {
       <GestureDetector gesture={pan}>
         <View style={[styles.board, { width: boardPx, height: boardPx }]}>
           <Canvas style={{ width: boardPx, height: boardPx }}>
+            <Jelly layers={hud.jelly} cell={cell} />
             {pieceColors.map((color, id) => (
               <Piece
                 key={id}
@@ -206,16 +228,24 @@ export function GameScreen({ level, hasNext, onRetry, onNext }: Props) {
       {ending && (
         <Animated.View entering={FadeIn.duration(200)} style={styles.overlay}>
           <View style={styles.card}>
-            <Text style={styles.cardTitle}>{ending.status === 'won' ? '¡Nivel superado!' : 'Sin movimientos'}</Text>
-            <Text style={styles.cardScore}>{ending.score.toLocaleString('es-MX')} puntos</Text>
-            <Text style={styles.cardDim}>
-              Meta {level.targetScore.toLocaleString('es-MX')} ·{' '}
-              {ending.status === 'won'
-                ? ending.movesLeft === 1
-                  ? 'te sobró 1 movimiento'
-                  : `te sobraron ${ending.movesLeft} movimientos`
-                : `faltaron ${(level.targetScore - ending.score).toLocaleString('es-MX')}`}
-            </Text>
+            <Text style={styles.cardTitle}>{ending.state.status === 'won' ? '¡Nivel superado!' : 'Sin movimientos'}</Text>
+            {ending.state.status === 'won' && (
+              <Text style={styles.stars}>
+                {[1, 2, 3].map((n) => (
+                  <Text key={n} style={n <= ending.stars ? styles.starOn : styles.starOff}>
+                    ★
+                  </Text>
+                ))}
+              </Text>
+            )}
+            <Text style={styles.cardScore}>{fmt(ending.state.score)} puntos</Text>
+            {ending.state.moveBonus > 0 && (
+              <Text style={styles.cardDim}>
+                incluye +{fmt(ending.state.moveBonus)} por{' '}
+                {ending.state.movesLeft === 1 ? '1 movimiento restante' : `${ending.state.movesLeft} movimientos restantes`}
+              </Text>
+            )}
+            <Goals goals={goalProgress(ending.state)} />
             <Text style={styles.cardPerf}>
               Rendimiento: prom {ending.perf.avgFps} fps · mín {ending.perf.minFps} · frames lentos {ending.perf.slowPct}% ·{' '}
               {ending.perf.seconds} s
@@ -224,7 +254,7 @@ export function GameScreen({ level, hasNext, onRetry, onNext }: Props) {
               <Pressable style={[styles.btn, styles.btnGhost]} onPress={onRetry}>
                 <Text style={styles.btnText}>Reintentar</Text>
               </Pressable>
-              {ending.status === 'won' && hasNext && (
+              {ending.state.status === 'won' && hasNext && (
                 <Pressable style={styles.btn} onPress={onNext}>
                   <Text style={styles.btnText}>Siguiente nivel</Text>
                 </Pressable>
@@ -244,8 +274,10 @@ const styles = StyleSheet.create({
   statWide: { flex: 1, alignItems: 'stretch' },
   statLabel: { color: theme.textDim, fontSize: 12, fontWeight: '600', textAlign: 'center' },
   statValue: { color: theme.text, fontSize: 24, fontWeight: '800', textAlign: 'center', fontVariant: ['tabular-nums'] },
-  bar: { height: 6, borderRadius: 3, backgroundColor: theme.surfaceHi, marginTop: 6, overflow: 'hidden' },
-  barFill: { height: 6, borderRadius: 3, backgroundColor: theme.good },
+  points: { color: theme.textDim, fontSize: 12, fontWeight: '600', textAlign: 'center', marginTop: 4, fontVariant: ['tabular-nums'] },
+  stars: { textAlign: 'center', fontSize: 34, letterSpacing: 6 },
+  starOn: { color: '#FFB400' },
+  starOff: { color: theme.surfaceHi },
   comboSlot: { height: 56, justifyContent: 'center' },
   combo: { color: '#FFB400', fontSize: 26, fontWeight: '900' },
   board: { backgroundColor: theme.surface, borderRadius: 16, overflow: 'hidden' },

@@ -21,7 +21,7 @@ function board(over: { cell: Cell; color?: number; kind?: Kind }[] = []): Board 
 }
 
 const stateOf = (b: Board): GameState => ({
-  ...newGame({ id: 't', seed: 1, moves: 10, targetScore: 1e9 }),
+  ...newGame({ id: 't', seed: 1, moves: 10, goals: [{ type: 'score', target: 1e9 }] }),
   board: b,
 });
 
@@ -136,7 +136,7 @@ test('specials appear and fire during ordinary play', () => {
   let created = 0;
   let fired = 0;
   for (let s = 0; s < 100; s++) {
-    let g = newGame({ id: 'p', seed: `sp-${s}`, moves: 30, targetScore: 1e9 });
+    let g = newGame({ id: 'p', seed: `sp-${s}`, moves: 30, goals: [{ type: 'score', target: 1e9 }] });
     while (g.status === 'playing') {
       const swaps = findValidSwaps(g.board);
       const [a, b] = swaps[(s * 13 + g.movesLeft) % swaps.length];

@@ -175,6 +175,9 @@ importers:
       '@match3/game-core':
         specifier: workspace:*
         version: link:../../packages/game-core
+      '@match3/levels':
+        specifier: workspace:*
+        version: link:../../packages/levels
       '@shopify/react-native-skia':
         specifier: 2.14.0
         version: 2.14.0(d1d8a403847157f49b4c4a26cc2e44d5)
@@ -220,6 +223,12 @@ importers:
         version: 6.0.3
 
   packages/game-core: {}
+
+  packages/levels:
+    dependencies:
+      '@match3/game-core':
+        specifier: workspace:*
+        version: link:../game-core
 
 packages:
 

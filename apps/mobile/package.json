@@ -4,6 +4,7 @@
   "main": "index.ts",
   "dependencies": {
     "@match3/game-core": "workspace:*",
+    "@match3/levels": "workspace:*",
     "@shopify/react-native-skia": "2.14.0",
     "expo": "~58.1.0",
     "expo-build-properties": "~58.0.12",

@@ -1,0 +1,17 @@
+[
+  {"id":"1","seed":"lvl-1","moves":20,"colors":5,"goals":[{"type":"score","target":1000}],"stars":[1420,1850,2250]},
+  {"id":"2","seed":"lvl-2","moves":20,"goals":[{"type":"score","target":1300}],"stars":[1300,1700,2050]},
+  {"id":"3","seed":"lvl-3","moves":20,"colors":5,"goals":[{"type":"collect","color":0,"count":25}],"stars":[1370,2850,4100]},
+  {"id":"4","seed":"lvl-4","moves":22,"goals":[{"type":"score","target":1500},{"type":"collect","color":2,"count":15}],"stars":[1560,1800,2250]},
+  {"id":"5","seed":"lvl-5","moves":34,"colors":5,"goals":[{"type":"jelly"}],"jelly":["........","........","........","........","........","........","11111111","11111111"],"stars":[2690,6700,9500]},
+  {"id":"6","seed":"lvl-6","moves":22,"goals":[{"type":"collect","color":3,"count":18}],"stars":[1200,1950,2450]},
+  {"id":"7","seed":"lvl-7","moves":30,"goals":[{"type":"jelly"}],"jelly":["........","........","..1111..","..1111..","..1111..","..1111..","........","........"],"stars":[1560,2350,3000]},
+  {"id":"8","seed":"lvl-8","moves":20,"goals":[{"type":"score","target":1900}],"stars":[1920,2250,2550]},
+  {"id":"9","seed":"lvl-9","moves":32,"goals":[{"type":"jelly"},{"type":"score","target":1500}],"jelly":["........","........","........","11111111","11111111","........","........","........"],"stars":[1950,2700,3650]},
+  {"id":"10","seed":"lvl-10","moves":25,"goals":[{"type":"collect","color":0,"count":20},{"type":"collect","color":4,"count":20}],"stars":[1730,2400,2850]},
+  {"id":"11","seed":"lvl-11","moves":38,"goals":[{"type":"jelly"}],"jelly":["...11...","...11...","...11...","11111111","11111111","...11...","...11...","...11..."],"stars":[2100,3350,4600]},
+  {"id":"12","seed":"lvl-12","moves":24,"goals":[{"type":"score","target":2600}],"stars":[2650,2850,3150]},
+  {"id":"13","seed":"lvl-13","moves":36,"goals":[{"type":"jelly"}],"jelly":["........","........","........","........","11111111","11111111","11111111","11111111"],"colors":5,"stars":[3390,6850,9400]},
+  {"id":"14","seed":"lvl-14","moves":28,"goals":[{"type":"collect","color":3,"count":25},{"type":"collect","color":5,"count":25}],"stars":[1590,2800,3800]},
+  {"id":"15","seed":"lvl-15","moves":50,"goals":[{"type":"jelly"}],"jelly":["22222222","21111112","21111112","21111112","21111112","21111112","21111112","22222222"],"colors":5,"stars":[7620,10300,13400]}
+]
