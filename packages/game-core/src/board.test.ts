@@ -28,7 +28,7 @@ test('findMatches detects a horizontal run of 3', () => {
   const b = createBoard(seeded(7));
   const colors = [...b.colors];
   for (const c of [0, 1, 2]) colors[b.grid[5][c]] = 9;
-  const hits = findMatches({ grid: b.grid, colors });
+  const hits = findMatches({ ...b, colors });
   for (const c of [0, 1, 2]) assert.ok(hits.some((h) => h.r === 5 && h.c === c));
 });
 
@@ -57,7 +57,7 @@ test('findRuns reports length and direction of each run', () => {
   const colors = [...b.colors];
   for (const c of [1, 2, 3, 4]) colors[b.grid[2][c]] = 9; // horizontal run of 4
   for (const r of [4, 5, 6]) colors[b.grid[r][7]] = 8; // vertical run of 3
-  const runs = findRuns({ grid: b.grid, colors });
+  const runs = findRuns({ ...b, colors });
   assert.equal(runs.length, 2);
   assert.deepEqual(runs.map((r) => [r.dir, r.cells.length]).sort(), [['h', 4], ['v', 3]]);
 });

@@ -1,9 +1,9 @@
 import { useCallback, useRef, useState } from 'react';
 import { Pressable, StyleSheet, Text, View, useWindowDimensions } from 'react-native';
 import { Canvas } from '@shopify/react-native-skia';
-import Animated, { Easing, FadeIn, FadeOut, ZoomIn, withTiming } from 'react-native-reanimated';
+import Animated, { Easing, FadeIn, FadeOut, ZoomIn, withSequence, withTiming } from 'react-native-reanimated';
 import { GestureDetector, usePanGesture } from 'react-native-gesture-handler';
-import { SIZE, newGame, playSwap, type Board, type Cell, type GameState, type Level } from '@match3/game-core';
+import { SIZE, newGame, playSwap, type Board, type Cell, type GameState, type Kind, type Level } from '@match3/game-core';
 import { PIECE_COLORS, colors as theme } from '../theme';
 import { Piece, type PieceAnim } from './Piece';
 import { useFpsMeter, type FpsSummary } from './useFpsMeter';
@@ -30,6 +30,11 @@ export function GameScreen({ level, hasNext, onRetry, onNext }: Props) {
   const [initial] = useState(() => newGame(level));
   const game = useRef<GameState>(initial);
   const [pieceColors, setPieceColors] = useState<number[]>(initial.board.colors);
+  const [pieceKinds, setPieceKinds] = useState<Kind[]>(initial.board.kinds);
+  const showBoard = (b: Board) => {
+    setPieceColors(b.colors);
+    setPieceKinds(b.kinds);
+  };
   // Where each piece id starts; only read on first mount, afterwards the anims own position.
   const [initialPos] = useState(() =>
     initial.board.grid.flatMap((row, r) => row.map((id, c) => ({ id, r, c }))).sort((a, b) => a.id - b.id),
@@ -86,7 +91,11 @@ export function GameScreen({ level, hasNext, onRetry, onNext }: Props) {
         }));
         await wait(T.clear);
 
-        setPieceColors(step.board.colors);
+        showBoard(step.board);
+        // A special left behind by this step pops in place while the rest falls.
+        for (const { id } of step.created) {
+          anims.current[id].s.value = withSequence(withTiming(1.3, { duration: 110 }), withTiming(1, { duration: 140 }));
+        }
         let longest = 0;
         for (const m of step.moves) {
           const anim = anims.current[m.id];
@@ -108,7 +117,7 @@ export function GameScreen({ level, hasNext, onRetry, onNext }: Props) {
         const ids = turn.reshuffled.grid.flat();
         scaleAll(ids, 0, T.reshuffle);
         await wait(T.reshuffle);
-        setPieceColors(turn.reshuffled.colors);
+        showBoard(turn.reshuffled);
         scaleAll(ids, 1, T.reshuffle);
         await wait(T.reshuffle);
       }
@@ -181,6 +190,7 @@ export function GameScreen({ level, hasNext, onRetry, onNext }: Props) {
                 key={id}
                 id={id}
                 color={PIECE_COLORS[color]}
+                kind={pieceKinds[id]}
                 cell={cell}
                 row={initialPos[id].r}
                 col={initialPos[id].c}

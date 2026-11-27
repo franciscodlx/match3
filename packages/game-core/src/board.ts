@@ -9,7 +9,11 @@ export const COLORS = 6;
 export type Cell = { r: number; c: number };
 export type Grid = number[][]; // grid[r][c] = pieceId
 
-export type Board = { grid: Grid; colors: number[] }; // colors[pieceId]
+/** normal piece, or a special one (see specials.ts for what each does). */
+export type Kind = 'normal' | 'lineH' | 'lineV' | 'bomb' | 'colorBomb';
+
+/** colors[pieceId], kinds[pieceId]. A color bomb keeps a color slot but never matches by color. */
+export type Board = { grid: Grid; colors: number[]; kinds: Kind[] };
 
 const randColor = (rng: Rng) => Math.floor(rng() * COLORS);
 
@@ -31,8 +35,14 @@ export function createBoard(rng: Rng): Board {
       grid[r].push(id);
     }
   }
-  return { grid, colors };
+  return { grid, colors, kinds: new Array<Kind>(SIZE * SIZE).fill('normal') };
 }
+
+export const kindAt = (b: Board, r: number, c: number): Kind => b.kinds[b.grid[r][c]];
+
+/** Two cells match by color (color bombs never do). */
+const sameColor = (b: Board, r1: number, c1: number, r2: number, c2: number) =>
+  kindAt(b, r1, c1) !== 'colorBomb' && kindAt(b, r2, c2) !== 'colorBomb' && colorAt(b, r1, c1) === colorAt(b, r2, c2);
 
 export const colorAt = (b: Board, r: number, c: number) => b.colors[b.grid[r][c]];
 
@@ -45,7 +55,7 @@ export function findRuns(b: Board): Run[] {
   for (let r = 0; r < SIZE; r++) {
     for (let c = 0; c < SIZE; ) {
       let end = c + 1;
-      while (end < SIZE && colorAt(b, r, end) === colorAt(b, r, c)) end++;
+      while (end < SIZE && sameColor(b, r, end, r, c)) end++;
       if (end - c >= 3) {
         const cells = [];
         for (let k = c; k < end; k++) cells.push({ r, c: k });
@@ -57,7 +67,7 @@ export function findRuns(b: Board): Run[] {
   for (let c = 0; c < SIZE; c++) {
     for (let r = 0; r < SIZE; ) {
       let end = r + 1;
-      while (end < SIZE && colorAt(b, end, c) === colorAt(b, r, c)) end++;
+      while (end < SIZE && sameColor(b, end, c, r, c)) end++;
       if (end - r >= 3) {
         const cells = [];
         for (let k = r; k < end; k++) cells.push({ r: k, c });
@@ -81,19 +91,30 @@ export const areAdjacent = (a: Cell, b: Cell) => Math.abs(a.r - b.r) + Math.abs(
 export function swap(b: Board, a: Cell, c: Cell): Board {
   const grid = b.grid.map((row) => [...row]);
   [grid[a.r][a.c], grid[c.r][c.c]] = [grid[c.r][c.c], grid[a.r][a.c]];
-  return { grid, colors: b.colors };
+  return { grid, colors: b.colors, kinds: b.kinds };
 }
+
+/** Swaps that fire without a color match: anything with a color bomb, or two specials. */
+export function isSpecialSwap(b: Board, a: Cell, c: Cell): boolean {
+  const ka = kindAt(b, a.r, a.c);
+  const kc = kindAt(b, c.r, c.c);
+  return ka === 'colorBomb' || kc === 'colorBomb' || (ka !== 'normal' && kc !== 'normal');
+}
+
+/** The rules' definition of a legal swap (adjacency is checked by the caller). */
+export const isUsefulSwap = (b: Board, a: Cell, c: Cell) => isSpecialSwap(b, a, c) || findRuns(swap(b, a, c)).length > 0;
 
 export type Move = { id: number; col: number; fromRow: number; toRow: number; spawned: boolean };
 
 /**
  * Removes the matched cells, drops survivors down and refills from the top.
  * Cleared piece ids are recycled as the new pieces (spawned above the board,
- * fromRow < 0), so the piece count stays constant at SIZE*SIZE.
+ * fromRow < 0), so the piece count stays constant at SIZE*SIZE. Spawned pieces are normal.
  */
 export function collapse(b: Board, cleared: Cell[], rng: Rng): { board: Board; moves: Move[] } {
   const grid = b.grid.map((row) => [...row]);
   const colors = [...b.colors];
+  const kinds = [...b.kinds];
   const clearedSet = new Set(cleared.map(({ r, c }) => r * SIZE + c));
   const moves: Move[] = [];
 
@@ -114,19 +135,20 @@ export function collapse(b: Board, cleared: Cell[], rng: Rng): { board: Board; m
     recycled.forEach((id, i) => {
       const toRow = target - i;
       colors[id] = randColor(rng);
+      kinds[id] = 'normal';
       grid[toRow][c] = id;
       moves.push({ id, col: c, fromRow: -1 - i, toRow, spawned: true });
     });
   }
-  return { board: { grid, colors }, moves };
+  return { board: { grid, colors, kinds }, moves };
 }
 
 /** True if some adjacent swap would produce a match (stops at the first one). */
 export function hasValidSwap(b: Board): boolean {
   for (let r = 0; r < SIZE; r++) {
     for (let c = 0; c < SIZE; c++) {
-      if (c + 1 < SIZE && findMatches(swap(b, { r, c }, { r, c: c + 1 })).length) return true;
-      if (r + 1 < SIZE && findMatches(swap(b, { r, c }, { r: r + 1, c })).length) return true;
+      if (c + 1 < SIZE && isUsefulSwap(b, { r, c }, { r, c: c + 1 })) return true;
+      if (r + 1 < SIZE && isUsefulSwap(b, { r, c }, { r: r + 1, c })) return true;
     }
   }
   return false;
@@ -141,12 +163,12 @@ export function reshuffle(b: Board, rng: Rng): Board {
     const fresh = createBoard(rng);
     const colors = [...b.colors];
     for (let r = 0; r < SIZE; r++) for (let c = 0; c < SIZE; c++) colors[b.grid[r][c]] = colorAt(fresh, r, c);
-    const next = { grid: b.grid, colors };
+    const next = { grid: b.grid, colors, kinds: b.kinds };
     if (hasValidSwap(next)) return next;
   }
 }
 
-/** All adjacent swaps that would produce at least one match. */
+/** All adjacent swaps the rules accept (a color match, or a special swap). */
 export function findValidSwaps(b: Board): [Cell, Cell][] {
   const out: [Cell, Cell][] = [];
   for (let r = 0; r < SIZE; r++) {
@@ -154,7 +176,7 @@ export function findValidSwaps(b: Board): [Cell, Cell][] {
       const a = { r, c };
       for (const n of [{ r, c: c + 1 }, { r: r + 1, c }]) {
         if (n.r >= SIZE || n.c >= SIZE) continue;
-        if (findMatches(swap(b, a, n)).length) out.push([a, n]);
+        if (isUsefulSwap(b, a, n)) out.push([a, n]);
       }
     }
   }
