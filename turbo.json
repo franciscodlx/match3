@@ -1,0 +1,14 @@
+{
+  "$schema": "https://turbo.build/schema.json",
+  "tasks": {
+    "start": {
+      "cache": false,
+      "persistent": true
+    },
+    "ios": {
+      "cache": false,
+      "persistent": true
+    },
+    "test": {}
+  }
+}

@@ -1,0 +1,7 @@
+node_modules
+.turbo
+apps/*/ios
+apps/*/android
+.expo
+apps/*/.expo
+build/
