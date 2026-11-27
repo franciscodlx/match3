@@ -25,9 +25,15 @@ export type GameLog = {
 };
 export type FeelLog = { type: 'feel'; level: string; status: 'won' | 'lost'; feel: 'fácil' | 'justo' | 'difícil' };
 
+/** Session-loop events: opening/leaving the app, rewards, lives. Extra fields are flat key/values. */
+export type SessionLog = {
+  type: 'session';
+  event: 'open' | 'close' | 'notification' | 'daily' | 'life-lost' | 'no-lives' | 'continue';
+} & Record<string, string | number | boolean | undefined>;
+
 export const playlogEnabled = __DEV__ && !!URL;
 
-export function playlog(entry: GameLog | FeelLog) {
+export function playlog(entry: GameLog | FeelLog | SessionLog) {
   if (!playlogEnabled) return;
   fetch(URL!, {
     method: 'POST',

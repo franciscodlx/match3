@@ -27,7 +27,11 @@ createServer((req, res) => {
           `nivel ${entry.level}  ${entry.status === 'won' ? 'GANÓ ' : 'perdió'}  ${entry.movesUsed}/${entry.moves} movs  ` +
             `${entry.score} pts  ${entry.stars}★  ${entry.seconds}s  combo máx ${entry.maxCombo}`,
         );
-      else console.log(`nivel ${entry.level}  se sintió: ${entry.feel}`);
+      else if (entry.type === 'feel') console.log(`nivel ${entry.level}  se sintió: ${entry.feel}`);
+      else {
+        const { type: _t, event, session: _s, at: _a, receivedAt: _r, ...rest } = entry;
+        console.log(`· ${event}  ${Object.entries(rest).filter(([, v]) => v !== undefined).map(([k, v]) => `${k}=${v}`).join(' ')}`);
+      }
       res.writeHead(204).end();
     } catch {
       res.writeHead(400).end();

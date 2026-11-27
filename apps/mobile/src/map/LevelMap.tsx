@@ -13,6 +13,7 @@ import { formatWait, now, today, useNow } from '../store/clock';
 import { getProgress, setProgress, useProgress } from '../store/progress';
 import { DailyRewardModal, LivesModal } from './Modals';
 import { askPermissionOnce } from '../store/notifications';
+import { playlog } from '../game/playlog';
 import { colors as theme } from '../theme';
 
 const ORDER = LEVELS.map((l) => l.id);
@@ -44,7 +45,10 @@ export function LevelMap() {
   }, [offerDaily]);
 
   const play = (id: string) => {
-    if (!canPlay(progress, now())) return setNoLivesOpen(true);
+    if (!canPlay(progress, now())) {
+      playlog({ type: 'session', event: 'no-lives', nextInMin: Math.ceil((lives.nextIn ?? 0) / 60000) });
+      return setNoLivesOpen(true);
+    }
     router.push({ pathname: '/level/[id]', params: { id } });
   };
   const contentH = PAD * 2 + STEP * (ORDER.length - 1);
@@ -145,6 +149,7 @@ export function LevelMap() {
         onClose={() => setDailyOpen(false)}
         onClaim={() => {
           setProgress((p) => claimDaily(p, today()) ?? p);
+          playlog({ type: 'session', event: 'daily', day: daily.day, streak: daily.streak, coins: daily.coins });
           feedback.win();
           setDailyOpen(false);
           // The moment a reminder makes sense: "we'll tell you when tomorrow's reward is ready".

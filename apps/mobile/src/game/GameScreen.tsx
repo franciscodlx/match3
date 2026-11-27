@@ -49,8 +49,8 @@ type Props = {
   onNext: () => void;
   onExit: () => void;
   onWin: (result: GameResult) => void;
-  /** The loss became final: the player left a lost game, or quit mid-game. Costs a life. */
-  onLoss: (result: GameResult) => void;
+  /** The loss became final: the player left a lost game, or quit mid-game (`quit`). Costs a life. */
+  onLoss: (result: GameResult, quit: boolean) => void;
   coins: number;
   continueCost: number;
   /** Pays for a continue; false if the player can't afford it. */
@@ -307,7 +307,7 @@ export function GameScreen(props: Props) {
   const finalizeLoss = () => {
     if (lossReported.current) return;
     lossReported.current = true;
-    onLoss({ won: false, stars: 0, score: game.current.score });
+    onLoss({ won: false, stars: 0, score: game.current.score }, game.current.status === 'playing');
   };
   /** Leave a lost game: the loss is final now (no continue taken). */
   const leaveLost = (then: () => void) => () => {

@@ -1,9 +1,10 @@
 import { useState } from 'react';
 import { Redirect, router, useLocalSearchParams } from 'expo-router';
 import { LEVELS } from '@match3/levels';
-import { CONTINUE_COST, addCoins, canPlay, isUnlocked, loseLife, recordGame, spendCoins, winCoins } from '@match3/meta';
+import { CONTINUE_COST, addCoins, canPlay, isUnlocked, livesAt, loseLife, recordGame, spendCoins, winCoins } from '@match3/meta';
 import { GameScreen } from '../../game/GameScreen';
 import { now } from '../../store/clock';
+import { playlog } from '../../game/playlog';
 import { getProgress, setProgress, useProgress } from '../../store/progress';
 
 const ORDER = LEVELS.map((l) => l.id);
@@ -28,12 +29,16 @@ export default function LevelRoute() {
       level={{ ...level, seed: `${level.seed}#${deal}` }}
       hasNext={!!next}
       onWin={(r) => setProgress((p) => addCoins(recordGame(p, level.id, r), winCoins(r.stars)))}
-      onLoss={(r) => setProgress((p) => loseLife(recordGame(p, level.id, r), now()))}
+      onLoss={(r, quit) => {
+        setProgress((p) => loseLife(recordGame(p, level.id, r), now()));
+        playlog({ type: 'session', event: 'life-lost', level: level.id, quit, lives: livesAt(getProgress(), now()).count });
+      }}
       coins={progress.coins}
       continueCost={CONTINUE_COST}
       onContinue={() => {
         const paid = spendCoins(getProgress(), CONTINUE_COST);
         if (paid) setProgress(() => paid);
+        if (paid) playlog({ type: 'session', event: 'continue', level: level.id, coinsLeft: paid.coins });
         return !!paid;
       }}
       onRetry={() => {
