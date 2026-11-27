@@ -52,6 +52,7 @@ export type GameState = {
   collected: number[]; // pieces cleared, by color
   moveBonus: number; // points added on a win for the moves left (already included in score)
   swaps: Swap[]; // accepted swaps, in order: the replay log
+  continuesAt: number[]; // swaps.length at each "continue" (extra moves after losing): also replayed
 };
 
 export type GoalProgress = { goal: Goal; current: number; target: number; done: boolean };
@@ -138,6 +139,7 @@ export function newGame(level: Level): GameState {
     collected: new Array<number>(COLORS).fill(0),
     moveBonus: 0,
     swaps: [],
+    continuesAt: [],
   };
 }
 
@@ -270,16 +272,38 @@ function resolveStep(
   };
 }
 
+export const CONTINUE_MOVES = 5;
+
+/** Revives a game lost on moves with extra moves. Returns null if there is nothing to continue. */
+export function continueGame(state: GameState, extraMoves = CONTINUE_MOVES): GameState | null {
+  if (state.status !== 'lost' || extraMoves <= 0) return null;
+  return {
+    ...state,
+    status: 'playing',
+    movesLeft: state.movesLeft + extraMoves,
+    continuesAt: [...state.continuesAt, state.swaps.length],
+  };
+}
+
 /**
  * Re-plays a swap log from the level's seed. `invalidAt` is the index of the first
  * swap the rules reject (a tampered or corrupted log), or null if all were legal.
  */
-export function replay(level: Level, swaps: Swap[]): { state: GameState; invalidAt: number | null } {
+export function replay(
+  level: Level,
+  swaps: Swap[],
+  continuesAt: number[] = [],
+): { state: GameState; invalidAt: number | null } {
   let state = newGame(level);
+  const revive = () => {
+    for (const at of continuesAt) if (at === state.swaps.length) state = continueGame(state) ?? state;
+  };
   for (let i = 0; i < swaps.length; i++) {
+    revive();
     const turn = playSwap(state, swaps[i][0], swaps[i][1]);
     if (!turn.valid) return { state, invalidAt: i };
     state = turn.state;
   }
+  revive();
   return { state, invalidAt: null };
 }

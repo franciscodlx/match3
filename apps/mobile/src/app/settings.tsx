@@ -1,7 +1,8 @@
 import { Alert, Pressable, StyleSheet, Switch, Text, View } from 'react-native';
 import { router } from 'expo-router';
 import Constants from 'expo-constants';
-import { totalStars, updateSettings } from '@match3/meta';
+import { addCoins, livesAt, refillLives, totalStars, updateSettings } from '@match3/meta';
+import { devClock, now, today, useNow } from '../store/clock';
 import { resetProgress, setProgress, useProgress } from '../store/progress';
 import { colors as theme } from '../theme';
 
@@ -9,6 +10,7 @@ export default function Settings() {
   const progress = useProgress();
   const { sound, haptics } = progress.settings;
   const beaten = Object.values(progress.levels).filter((l) => l.wins > 0).length;
+  useNow(); // keep the dev clock readout fresh
 
   const confirmReset = () =>
     Alert.alert('¿Borrar tu progreso?', 'Perderás tus estrellas y los niveles desbloqueados.', [
@@ -33,13 +35,35 @@ export default function Settings() {
 
       <View style={styles.group}>
         <Text style={styles.info}>
-          {beaten} niveles superados · ★ {totalStars(progress)}
+          {beaten} niveles superados · ★ {totalStars(progress)} · 🪙 {progress.coins} · 🔥 {progress.daily.streak}
         </Text>
       </View>
 
       <Pressable style={[styles.group, styles.danger]} onPress={confirmReset}>
         <Text style={styles.dangerText}>Borrar progreso</Text>
       </Pressable>
+
+      {__DEV__ && (
+        <View style={[styles.group, styles.dev]}>
+          <Text style={styles.devTitle}>Reloj de prueba (solo desarrollo)</Text>
+          <Text style={styles.info}>
+            Hoy: {today()} · desfase {Math.round(devClock.offset() / 60000)} min · vidas {livesAt(progress, now()).count}
+          </Text>
+          <View style={styles.devRow}>
+            {[
+              ['+30 min', () => devClock.advance(30 * 60_000)],
+              ['+1 día', () => devClock.advance(24 * 3600_000)],
+              ['Reloj real', () => devClock.reset()],
+              ['Vidas llenas', () => setProgress(refillLives)],
+              ['+500 🪙', () => setProgress((p) => addCoins(p, 500))],
+            ].map(([label, fn]) => (
+              <Pressable key={label as string} style={styles.devBtn} onPress={fn as () => void}>
+                <Text style={styles.devBtnText}>{label as string}</Text>
+              </Pressable>
+            ))}
+          </View>
+        </View>
+      )}
 
       <Text style={styles.version}>Versión {Constants.expoConfig?.version ?? '—'}</Text>
     </View>
@@ -67,5 +91,10 @@ const styles = StyleSheet.create({
   info: { color: theme.textDim, fontSize: 15, paddingVertical: 14 },
   danger: { paddingVertical: 14, alignItems: 'center' },
   dangerText: { color: theme.bad, fontSize: 17, fontWeight: '600' },
+  dev: { paddingVertical: 12, gap: 6 },
+  devTitle: { color: theme.textDim, fontSize: 13, fontWeight: '700' },
+  devRow: { flexDirection: 'row', flexWrap: 'wrap', gap: 8 },
+  devBtn: { backgroundColor: theme.surfaceHi, borderRadius: 12, paddingHorizontal: 12, paddingVertical: 8 },
+  devBtnText: { color: theme.text, fontSize: 14, fontWeight: '600' },
   version: { color: theme.textDim, fontSize: 12, textAlign: 'center' },
 });

@@ -1,26 +1,51 @@
 // Level map: a winding path from the bottom (level 1) upwards, like the genre's saga maps.
 // The path is one Skia canvas behind plain RN buttons, so nodes stay tappable and accessible.
-import { useEffect } from 'react';
-import { Pressable, ScrollView, StyleSheet, Text, View, useWindowDimensions } from 'react-native';
+import { useCallback, useEffect, useState } from 'react';
+import { AppState, Pressable, ScrollView, StyleSheet, Text, View, useWindowDimensions } from 'react-native';
 import { Canvas, DashPathEffect, Path, Skia } from '@shopify/react-native-skia';
 import Animated, { useAnimatedStyle, useSharedValue, withRepeat, withTiming } from 'react-native-reanimated';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
-import { router } from 'expo-router';
+import { router, useFocusEffect, useLocalSearchParams } from 'expo-router';
 import { LEVELS } from '@match3/levels';
-import { currentLevel, isUnlocked, totalStars } from '@match3/meta';
-import { useProgress } from '../store/progress';
+import { canPlay, claimDaily, currentLevel, dailyStatus, isUnlocked, livesAt, totalStars } from '@match3/meta';
+import { feedback } from '../game/feedback';
+import { formatWait, now, today, useNow } from '../store/clock';
+import { getProgress, setProgress, useProgress } from '../store/progress';
+import { DailyRewardModal, LivesModal } from './Modals';
 import { colors as theme } from '../theme';
 
 const ORDER = LEVELS.map((l) => l.id);
 const NODE = 68;
 const STEP = 112; // vertical distance between levels
 const PAD = 80; // space above the last and below the first level
+const dailyClaimable = () => dailyStatus(getProgress(), today()).claimable;
 
 export function LevelMap() {
   const progress = useProgress();
   const insets = useSafeAreaInsets();
   const { width, height } = useWindowDimensions();
   const current = currentLevel(progress, ORDER);
+  const t = useNow();
+  const lives = livesAt(progress, t);
+  const daily = dailyStatus(progress, today());
+  const [dailyOpen, setDailyOpen] = useState(false);
+  const { nolives } = useLocalSearchParams<{ nolives?: string }>();
+  const [noLivesOpen, setNoLivesOpen] = useState(nolives === '1');
+
+  // Offer the daily reward whenever the map is shown or the app comes back to the foreground.
+  const offerDaily = useCallback(() => {
+    if (dailyClaimable()) setDailyOpen(true);
+  }, [setDailyOpen]);
+  useFocusEffect(offerDaily);
+  useEffect(() => {
+    const sub = AppState.addEventListener('change', (st) => st === 'active' && offerDaily());
+    return () => sub.remove();
+  }, [offerDaily]);
+
+  const play = (id: string) => {
+    if (!canPlay(progress, now())) return setNoLivesOpen(true);
+    router.push({ pathname: '/level/[id]', params: { id } });
+  };
   const contentH = PAD * 2 + STEP * (ORDER.length - 1);
   // Level i (0-based) sits at the bottom for i=0; x swings left and right around the center.
   const pos = (i: number) => ({ x: width / 2 + Math.sin(i * 1.1) * width * 0.26, y: contentH - PAD - i * STEP });
@@ -43,11 +68,27 @@ export function LevelMap() {
   return (
     <View style={styles.root}>
       <View style={[styles.header, { paddingTop: insets.top + 8 }]}>
-        <Text style={styles.title}>Match3</Text>
+        <View style={styles.pills}>
+          <Pressable style={styles.pill} onPress={() => setNoLivesOpen(true)}>
+            <Text style={styles.pillHeart}>♥</Text>
+            <Text style={styles.pillText}>
+              {lives.count}
+              {!lives.full && <Text style={styles.pillDim}> · {formatWait(lives.nextIn ?? 0)}</Text>}
+            </Text>
+          </Pressable>
+          <View style={styles.pill}>
+            <Text style={styles.pillText}>🪙 {progress.coins}</Text>
+          </View>
+          <Pressable style={[styles.pill, daily.claimable && styles.pillHot]} onPress={() => setDailyOpen(true)}>
+            <Text style={styles.pillText}>{daily.claimable ? '🎁' : `🔥 ${progress.daily.streak}`}</Text>
+          </Pressable>
+          <View style={styles.pill}>
+            <Text style={styles.stars}>
+              ★ {totalStars(progress)}
+            </Text>
+          </View>
+        </View>
         <View style={styles.headerRight}>
-          <Text style={styles.stars}>
-            ★ {totalStars(progress)} / {ORDER.length * 3}
-          </Text>
           <Pressable onPress={() => router.push('/settings')} hitSlop={10} accessibilityLabel="Ajustes">
             <Text style={styles.gear}>⚙︎</Text>
           </Pressable>
@@ -65,13 +106,12 @@ export function LevelMap() {
             const { x, y } = pos(i);
             const open = isUnlocked(progress, ORDER, id);
             const stars = progress.levels[id]?.stars ?? 0;
-            const play = () => router.push({ pathname: '/level/[id]', params: { id } });
             return (
               <View key={id} style={[styles.nodeWrap, { left: x - NODE / 2, top: y - NODE / 2 }]}>
                 {id === current && <Pulse />}
                 <Pressable
-                  onPress={open ? play : undefined}
-                  onLongPress={__DEV__ && !open ? play : undefined} // dev: play locked levels
+                  onPress={open ? () => play(id) : undefined}
+                  onLongPress={__DEV__ && !open ? () => play(id) : undefined} // dev: play locked levels
                   accessibilityLabel={`Nivel ${id}${open ? '' : ', bloqueado'}`}
                   style={[styles.node, !open && styles.nodeLocked, id === current && styles.nodeCurrent]}
                 >
@@ -91,10 +131,24 @@ export function LevelMap() {
       </ScrollView>
 
       <View style={[styles.footer, { paddingBottom: insets.bottom + 12 }]}>
-        <Pressable style={styles.playBtn} onPress={() => router.push({ pathname: '/level/[id]', params: { id: current } })}>
-          <Text style={styles.playText}>Jugar · Nivel {current}</Text>
+        <Pressable style={[styles.playBtn, lives.count === 0 && styles.playBtnOff]} onPress={() => play(current)}>
+          <Text style={styles.playText}>
+            {lives.count > 0 ? `Jugar · Nivel ${current}` : `Sin vidas · ${formatWait(lives.nextIn ?? 0)}`}
+          </Text>
         </Pressable>
       </View>
+
+      <DailyRewardModal
+        visible={dailyOpen}
+        daily={daily}
+        onClose={() => setDailyOpen(false)}
+        onClaim={() => {
+          setProgress((p) => claimDaily(p, today()) ?? p);
+          feedback.win();
+          setDailyOpen(false);
+        }}
+      />
+      <LivesModal visible={noLivesOpen} lives={lives} onClose={() => setNoLivesOpen(false)} />
     </View>
   );
 }
@@ -120,7 +174,20 @@ const styles = StyleSheet.create({
     zIndex: 1,
   },
   headerRight: { flexDirection: 'row', alignItems: 'center', gap: 16 },
-  title: { color: theme.text, fontSize: 26, fontWeight: '900' },
+  pills: { flexDirection: 'row', gap: 6, flexShrink: 1, flexWrap: 'wrap' },
+  pill: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 4,
+    backgroundColor: theme.surface,
+    borderRadius: 16,
+    paddingHorizontal: 10,
+    paddingVertical: 6,
+  },
+  pillHot: { backgroundColor: theme.accent },
+  pillHeart: { color: theme.bad, fontSize: 16, fontWeight: '900' },
+  pillText: { color: theme.text, fontSize: 15, fontWeight: '800', fontVariant: ['tabular-nums'] },
+  pillDim: { color: theme.textDim, fontWeight: '600' },
   stars: { color: '#FFB400', fontSize: 16, fontWeight: '800', fontVariant: ['tabular-nums'] },
   gear: { color: theme.textDim, fontSize: 26 },
   nodeWrap: { position: 'absolute', width: NODE, alignItems: 'center' },
@@ -151,5 +218,6 @@ const styles = StyleSheet.create({
   },
   footer: { paddingHorizontal: 20, paddingTop: 12, backgroundColor: theme.bg },
   playBtn: { backgroundColor: theme.good, borderRadius: 28, paddingVertical: 16, alignItems: 'center' },
+  playBtnOff: { backgroundColor: theme.surfaceHi },
   playText: { color: '#0F1220', fontSize: 18, fontWeight: '900' },
 });

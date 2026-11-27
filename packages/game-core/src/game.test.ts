@@ -1,7 +1,7 @@
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
 import { SIZE, findMatches, findValidSwaps, hasValidSwap } from './board.ts';
-import { goalProgress, jellyLayers, newGame, playSwap, replay, runPoints, starsFor, type GameState, type Level } from './game.ts';
+import { continueGame, goalProgress, jellyLayers, newGame, playSwap, replay, runPoints, starsFor, type GameState, type Level } from './game.ts';
 
 const level = ({ targetScore = 5000, ...over }: Partial<Level> & { targetScore?: number } = {}): Level => ({
   id: 't',
@@ -232,4 +232,23 @@ test('winning early adds a bonus per move left', () => {
   assert.equal(end.moveBonus, end.movesLeft * 50);
   const lost = autoplay(newGame(level({ moves: 2, targetScore: 1e9 })));
   assert.equal(lost.moveBonus, 0);
+});
+
+test('continue revives a lost game with extra moves, and replay reproduces it', () => {
+  const lvl = level({ seed: 'continue', moves: 3, targetScore: 1e9 });
+  const lost = autoplay(newGame(lvl));
+  assert.equal(lost.status, 'lost');
+  assert.equal(continueGame(newGame(lvl)), null); // only a lost game can continue
+  const revived = continueGame(lost)!;
+  assert.equal(revived.status, 'playing');
+  assert.equal(revived.movesLeft, 5);
+  assert.deepEqual(revived.continuesAt, [3]);
+  const end = autoplay(revived);
+  assert.equal(end.status, 'lost');
+  assert.equal(end.swaps.length, 8);
+  const { state, invalidAt } = replay(lvl, end.swaps, end.continuesAt);
+  assert.equal(invalidAt, null);
+  assert.deepEqual(state, end);
+  // Without the continue, the log is impossible: the 4th swap comes after the game ended.
+  assert.equal(replay(lvl, end.swaps).invalidAt, 3);
 });

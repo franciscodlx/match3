@@ -3,13 +3,32 @@
 
 export type LevelRecord = { stars: number; best: number; plays: number; wins: number };
 export type Settings = { sound: boolean; haptics: boolean };
-export type Progress = { version: 1; levels: Record<string, LevelRecord>; settings: Settings };
+/** Lives regenerate over time; `since` is when the regen clock started (ms epoch), 0 = full. */
+export type Lives = { count: number; since: number };
+/** Daily reward: `streak` consecutive days claimed, `last` the local day of the last claim. */
+export type Daily = { streak: number; last: string | null };
+export type Progress = {
+  version: 1;
+  levels: Record<string, LevelRecord>;
+  settings: Settings;
+  lives: Lives;
+  coins: number;
+  daily: Daily;
+};
 export type GameResult = { won: boolean; stars: number; score: number };
 
 const DEFAULT_SETTINGS: Settings = { sound: true, haptics: true };
+export const MAX_LIVES = 5;
 
 export function emptyProgress(): Progress {
-  return { version: 1, levels: {}, settings: { ...DEFAULT_SETTINGS } };
+  return {
+    version: 1,
+    levels: {},
+    settings: { ...DEFAULT_SETTINGS },
+    lives: { count: MAX_LIVES, since: 0 },
+    coins: 0,
+    daily: { streak: 0, last: null },
+  };
 }
 
 /** Folds one finished game into the progress. Stars and best score only ever go up. */
@@ -45,6 +64,7 @@ export function updateSettings(p: Progress, next: Partial<Settings>): Progress {
   return { ...p, settings: { ...p.settings, ...next } };
 }
 
+const DAY = /^\d{4}-\d{2}-\d{2}$/;
 const isNat = (n: unknown): n is number => typeof n === 'number' && Number.isInteger(n) && n >= 0;
 
 /**
@@ -74,5 +94,12 @@ export function parseProgress(raw: string | null | undefined): Progress {
     if (typeof s.sound === 'boolean') out.settings.sound = s.sound;
     if (typeof s.haptics === 'boolean') out.settings.haptics = s.haptics;
   }
+  // Fields added in 3.2: a 3.1 save simply lacks them and gets the defaults.
+  const x = data as { lives?: Partial<Lives>; coins?: unknown; daily?: Partial<Daily> };
+  if (x.lives && isNat(x.lives.count) && x.lives.count <= MAX_LIVES && isNat(x.lives.since))
+    out.lives = { count: x.lives.count, since: x.lives.since };
+  if (isNat(x.coins)) out.coins = x.coins;
+  if (x.daily && isNat(x.daily.streak) && (x.daily.last === null || (typeof x.daily.last === 'string' && DAY.test(x.daily.last))))
+    out.daily = { streak: x.daily.streak, last: x.daily.last };
   return out;
 }

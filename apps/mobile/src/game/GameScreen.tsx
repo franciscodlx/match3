@@ -1,5 +1,5 @@
 import { useCallback, useEffect, useRef, useState } from 'react';
-import { Pressable, StyleSheet, Text, View, useWindowDimensions } from 'react-native';
+import { Alert, Pressable, StyleSheet, Text, View, useWindowDimensions } from 'react-native';
 import { Canvas } from '@shopify/react-native-skia';
 import Animated, {
   Easing,
@@ -16,6 +16,7 @@ import Animated, {
 import { GestureDetector, usePanGesture } from 'react-native-gesture-handler';
 import {
   SIZE,
+  continueGame,
   findValidSwaps,
   goalProgress,
   newGame,
@@ -31,6 +32,7 @@ import { PIECE_COLORS, colors as theme } from '../theme';
 import { Effects, type EffectsHandle } from './Effects';
 import { feedback } from './feedback';
 import { Goals } from './Goals';
+import { winCoins } from '@match3/meta';
 import { Jelly } from './Jelly';
 import { Piece, type PieceAnim } from './Piece';
 import { playlog, playlogEnabled, type FeelLog } from './playlog';
@@ -46,15 +48,23 @@ type Props = {
   onRetry: () => void;
   onNext: () => void;
   onExit: () => void;
-  onFinish: (result: { won: boolean; stars: number; score: number }) => void;
+  onWin: (result: GameResult) => void;
+  /** The loss became final: the player left a lost game, or quit mid-game. Costs a life. */
+  onLoss: (result: GameResult) => void;
+  coins: number;
+  continueCost: number;
+  /** Pays for a continue; false if the player can't afford it. */
+  onContinue: () => boolean;
 };
+type GameResult = { won: boolean; stars: number; score: number };
 
 type Hud = { score: number; movesLeft: number; combo: number; comboKey: number; collected: number[]; jelly: number[] };
 type Ending = { state: GameState; stars: number; perf: FpsSummary; feel?: FeelLog['feel'] };
 type Popup = { key: number; x: number; y: number; points: number };
 const fmt = (n: number) => n.toLocaleString('es-MX');
 
-export function GameScreen({ level, hasNext, onRetry, onNext, onExit, onFinish }: Props) {
+export function GameScreen(props: Props) {
+  const { level, hasNext, onRetry, onNext, onExit, onWin, onLoss, coins, continueCost, onContinue } = props;
   const { width } = useWindowDimensions();
   const boardPx = Math.min(width - 24, 480);
   const cell = boardPx / SIZE;
@@ -283,13 +293,43 @@ export function GameScreen({ level, hasNext, onRetry, onNext, onExit, onFinish }
           avgFps: perf.avgFps,
           minFps: perf.minFps,
         });
-        onFinish({ won: end.status === 'won', stars: starsFor(end), score: end.score });
+        if (end.status === 'won') onWin({ won: true, stars: starsFor(end), score: end.score });
         setEnding({ state: end, stars: starsFor(end), perf });
       }
     } finally {
       busy.current = false;
       if (game.current.status === 'playing') scheduleHint();
     }
+  };
+
+  // ── Leaving, losing and continuing ──
+  const lossReported = useRef(false);
+  const finalizeLoss = () => {
+    if (lossReported.current) return;
+    lossReported.current = true;
+    onLoss({ won: false, stars: 0, score: game.current.score });
+  };
+  /** Leave a lost game: the loss is final now (no continue taken). */
+  const leaveLost = (then: () => void) => () => {
+    finalizeLoss();
+    then();
+  };
+  const requestExit = () => {
+    const g = game.current;
+    if (g.status === 'lost') return leaveLost(onExit)();
+    if (g.status !== 'playing' || g.swaps.length === 0) return onExit();
+    Alert.alert('¿Salir del nivel?', 'Perderás una vida.', [
+      { text: 'Seguir jugando', style: 'cancel' },
+      { text: 'Salir', style: 'destructive', onPress: leaveLost(onExit) },
+    ]);
+  };
+  const doContinue = () => {
+    const revived = continueGame(game.current);
+    if (!revived || !onContinue()) return;
+    game.current = revived;
+    setHud((h) => ({ ...h, movesLeft: revived.movesLeft }));
+    setEnding(null);
+    scheduleHint();
   };
 
   // ── Gesture: swipe from a cell towards a neighbour ──
@@ -314,7 +354,7 @@ export function GameScreen({ level, hasNext, onRetry, onNext, onExit, onFinish }
   return (
     <View style={styles.root}>
       <View style={styles.header}>
-        <Pressable style={styles.stat} onPress={onExit} hitSlop={8}>
+        <Pressable style={styles.stat} onPress={requestExit} hitSlop={8}>
           <Text style={styles.statLabel}>‹ Nivel</Text>
           <Text style={styles.statValue}>{level.id}</Text>
         </Pressable>
@@ -392,7 +432,22 @@ export function GameScreen({ level, hasNext, onRetry, onNext, onExit, onFinish }
                 {ending.state.movesLeft === 1 ? '1 movimiento restante' : `${ending.state.movesLeft} movimientos restantes`}
               </Text>
             )}
+            {ending.state.status === 'won' && <Text style={styles.cardCoins}>+{winCoins(ending.stars)} 🪙</Text>}
             <Goals goals={goalProgress(ending.state)} />
+            {ending.state.status === 'lost' && (
+              <Pressable
+                style={[styles.btn, styles.btnContinue, coins < continueCost && styles.btnDisabled]}
+                disabled={coins < continueCost}
+                onPress={doContinue}
+              >
+                <Text style={styles.btnContinueText}>+5 movimientos · 🪙 {continueCost}</Text>
+                {coins < continueCost && (
+                  <Text style={styles.cardDim}>
+                    Tienes 🪙 {coins}; te faltan {continueCost - coins}
+                  </Text>
+                )}
+              </Pressable>
+            )}
             <Text style={styles.cardPerf}>
               Rendimiento: prom {ending.perf.avgFps} fps · mín {ending.perf.minFps} · frames lentos {ending.perf.slowPct}% ·{' '}
               {ending.perf.seconds} s
@@ -416,10 +471,10 @@ export function GameScreen({ level, hasNext, onRetry, onNext, onExit, onFinish }
               </View>
             )}
             <View style={styles.cardActions}>
-              <Pressable style={[styles.btn, styles.btnGhost]} onPress={onExit}>
+              <Pressable style={[styles.btn, styles.btnGhost]} onPress={ending.state.status === 'lost' ? leaveLost(onExit) : onExit}>
                 <Text style={styles.btnText}>Mapa</Text>
               </Pressable>
-              <Pressable style={[styles.btn, styles.btnGhost]} onPress={onRetry}>
+              <Pressable style={[styles.btn, styles.btnGhost]} onPress={ending.state.status === 'lost' ? leaveLost(onRetry) : onRetry}>
                 <Text style={styles.btnText}>Reintentar</Text>
               </Pressable>
               {ending.state.status === 'won' && hasNext && (
@@ -473,6 +528,10 @@ const styles = StyleSheet.create({
   feelText: { color: theme.text, fontSize: 13, fontWeight: '600' },
   cardActions: { flexDirection: 'row', flexWrap: 'wrap', gap: 10, justifyContent: 'center', marginTop: 12 },
   btn: { backgroundColor: theme.accent, paddingHorizontal: 20, paddingVertical: 12, borderRadius: 24 },
+  cardCoins: { color: '#FFD45C', fontSize: 18, fontWeight: '800', textAlign: 'center' },
+  btnContinue: { backgroundColor: theme.good, alignItems: 'center', marginTop: 8 },
+  btnContinueText: { color: '#0F1220', fontWeight: '900', fontSize: 16 },
+  btnDisabled: { opacity: 0.5 },
   btnGhost: { backgroundColor: theme.surfaceHi },
   btnText: { color: theme.text, fontWeight: '700', fontSize: 15 },
 });
