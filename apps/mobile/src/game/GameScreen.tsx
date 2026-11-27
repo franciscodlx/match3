@@ -29,7 +29,7 @@ import {
 } from '@match3/game-core';
 import { PIECE_COLORS, colors as theme } from '../theme';
 import { Effects, type EffectsHandle } from './Effects';
-import { feedback, feedbackSettings, initFeedback } from './feedback';
+import { feedback } from './feedback';
 import { Goals } from './Goals';
 import { Jelly } from './Jelly';
 import { Piece, type PieceAnim } from './Piece';
@@ -45,7 +45,8 @@ type Props = {
   hasNext: boolean;
   onRetry: () => void;
   onNext: () => void;
-  onSkip: () => void; // dev only
+  onExit: () => void;
+  onFinish: (result: { won: boolean; stars: number; score: number }) => void;
 };
 
 type Hud = { score: number; movesLeft: number; combo: number; comboKey: number; collected: number[]; jelly: number[] };
@@ -53,7 +54,7 @@ type Ending = { state: GameState; stars: number; perf: FpsSummary; feel?: FeelLo
 type Popup = { key: number; x: number; y: number; points: number };
 const fmt = (n: number) => n.toLocaleString('es-MX');
 
-export function GameScreen({ level, hasNext, onRetry, onNext, onSkip }: Props) {
+export function GameScreen({ level, hasNext, onRetry, onNext, onExit, onFinish }: Props) {
   const { width } = useWindowDimensions();
   const boardPx = Math.min(width - 24, 480);
   const cell = boardPx / SIZE;
@@ -90,8 +91,6 @@ export function GameScreen({ level, hasNext, onRetry, onNext, onSkip }: Props) {
   const effects = useRef<EffectsHandle>(null);
   const [popups, setPopups] = useState<Popup[]>([]);
   const popupKey = useRef(0);
-  const [muted, setMuted] = useState(() => !feedbackSettings.get().sound);
-  useEffect(() => initFeedback(), []);
 
   // ── Hint: after a few idle seconds, two pieces that make a match pulse until the next move ──
   const hint = useRef<{ timer?: ReturnType<typeof setTimeout>; ids: number[] }>({ ids: [] });
@@ -284,6 +283,7 @@ export function GameScreen({ level, hasNext, onRetry, onNext, onSkip }: Props) {
           avgFps: perf.avgFps,
           minFps: perf.minFps,
         });
+        onFinish({ won: end.status === 'won', stars: starsFor(end), score: end.score });
         setEnding({ state: end, stars: starsFor(end), perf });
       }
     } finally {
@@ -314,9 +314,8 @@ export function GameScreen({ level, hasNext, onRetry, onNext, onSkip }: Props) {
   return (
     <View style={styles.root}>
       <View style={styles.header}>
-        {/* Dev builds: tap the level box to jump to the next level (no level map until iteration 3). */}
-        <Pressable style={styles.stat} disabled={!__DEV__} onPress={onSkip}>
-          <Text style={styles.statLabel}>Nivel</Text>
+        <Pressable style={styles.stat} onPress={onExit} hitSlop={8}>
+          <Text style={styles.statLabel}>‹ Nivel</Text>
           <Text style={styles.statValue}>{level.id}</Text>
         </Pressable>
         <View style={[styles.stat, styles.statWide]}>
@@ -324,17 +323,10 @@ export function GameScreen({ level, hasNext, onRetry, onNext, onSkip }: Props) {
           <Goals goals={goals} />
           <Text style={styles.points}>{fmt(hud.score)} puntos</Text>
         </View>
-        <Pressable
-          style={styles.stat}
-          onLongPress={() => {
-            // Long-press the moves box to mute/unmute sound (a real settings screen comes with the map).
-            feedbackSettings.set({ sound: muted });
-            setMuted(!muted);
-          }}
-        >
-          <Text style={styles.statLabel}>Movs {muted ? '🔇' : ''}</Text>
+        <View style={styles.stat}>
+          <Text style={styles.statLabel}>Movs</Text>
           <Text style={[styles.statValue, hud.movesLeft <= 3 && { color: theme.bad }]}>{hud.movesLeft}</Text>
-        </Pressable>
+        </View>
       </View>
 
       <View style={styles.comboSlot}>
@@ -424,6 +416,9 @@ export function GameScreen({ level, hasNext, onRetry, onNext, onSkip }: Props) {
               </View>
             )}
             <View style={styles.cardActions}>
+              <Pressable style={[styles.btn, styles.btnGhost]} onPress={onExit}>
+                <Text style={styles.btnText}>Mapa</Text>
+              </Pressable>
               <Pressable style={[styles.btn, styles.btnGhost]} onPress={onRetry}>
                 <Text style={styles.btnText}>Reintentar</Text>
               </Pressable>
@@ -476,7 +471,7 @@ const styles = StyleSheet.create({
   feelBtn: { backgroundColor: theme.surfaceHi, paddingHorizontal: 12, paddingVertical: 6, borderRadius: 14 },
   feelOn: { backgroundColor: theme.accent },
   feelText: { color: theme.text, fontSize: 13, fontWeight: '600' },
-  cardActions: { flexDirection: 'row', gap: 12, justifyContent: 'center', marginTop: 12 },
+  cardActions: { flexDirection: 'row', flexWrap: 'wrap', gap: 10, justifyContent: 'center', marginTop: 12 },
   btn: { backgroundColor: theme.accent, paddingHorizontal: 20, paddingVertical: 12, borderRadius: 24 },
   btnGhost: { backgroundColor: theme.surfaceHi },
   btnText: { color: theme.text, fontWeight: '700', fontSize: 15 },

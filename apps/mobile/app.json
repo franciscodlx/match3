@@ -45,7 +45,12 @@
           "recordAudioAndroid": false,
           "enableBackgroundPlayback": false
         }
-      ]
-    ]
+      ],
+      "expo-router",
+      "expo-sqlite"
+    ],
+    "experiments": {
+      "typedRoutes": true
+    }
   }
 }

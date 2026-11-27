@@ -6,3 +6,4 @@ apps/*/android
 apps/*/.expo
 build/
 playtest/
+apps/*/expo-env.d.ts

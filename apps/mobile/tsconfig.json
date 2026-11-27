@@ -4,5 +4,13 @@
     "strict": true,
     "allowImportingTsExtensions": true
   },
-  "exclude": ["scripts"]
+  "exclude": [
+    "scripts"
+  ],
+  "include": [
+    "**/*.ts",
+    "**/*.tsx",
+    ".expo/types/**/*.ts",
+    "expo-env.d.ts"
+  ]
 }
