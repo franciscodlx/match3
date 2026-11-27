@@ -50,5 +50,5 @@ test('a corrupt save falls back field by field instead of crashing', () => {
     }),
   );
   assert.deepEqual(Object.keys(p.levels), ['1']);
-  assert.deepEqual(p.settings, { sound: true, haptics: false });
+  assert.deepEqual(p.settings, { sound: true, haptics: false, notifications: true });
 });

@@ -12,6 +12,7 @@ import { feedback } from '../game/feedback';
 import { formatWait, now, today, useNow } from '../store/clock';
 import { getProgress, setProgress, useProgress } from '../store/progress';
 import { DailyRewardModal, LivesModal } from './Modals';
+import { askPermissionOnce } from '../store/notifications';
 import { colors as theme } from '../theme';
 
 const ORDER = LEVELS.map((l) => l.id);
@@ -146,6 +147,8 @@ export function LevelMap() {
           setProgress((p) => claimDaily(p, today()) ?? p);
           feedback.win();
           setDailyOpen(false);
+          // The moment a reminder makes sense: "we'll tell you when tomorrow's reward is ready".
+          setTimeout(() => askPermissionOnce(), 600);
         }}
       />
       <LivesModal visible={noLivesOpen} lives={lives} onClose={() => setNoLivesOpen(false)} />

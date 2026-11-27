@@ -2,7 +2,7 @@
 // Pure and serializable: the app stores it as one JSON string; tests need no device.
 
 export type LevelRecord = { stars: number; best: number; plays: number; wins: number };
-export type Settings = { sound: boolean; haptics: boolean };
+export type Settings = { sound: boolean; haptics: boolean; notifications: boolean };
 /** Lives regenerate over time; `since` is when the regen clock started (ms epoch), 0 = full. */
 export type Lives = { count: number; since: number };
 /** Daily reward: `streak` consecutive days claimed, `last` the local day of the last claim. */
@@ -17,7 +17,7 @@ export type Progress = {
 };
 export type GameResult = { won: boolean; stars: number; score: number };
 
-const DEFAULT_SETTINGS: Settings = { sound: true, haptics: true };
+const DEFAULT_SETTINGS: Settings = { sound: true, haptics: true, notifications: true };
 export const MAX_LIVES = 5;
 
 export function emptyProgress(): Progress {
@@ -93,6 +93,7 @@ export function parseProgress(raw: string | null | undefined): Progress {
     const s = d.settings as Partial<Settings>;
     if (typeof s.sound === 'boolean') out.settings.sound = s.sound;
     if (typeof s.haptics === 'boolean') out.settings.haptics = s.haptics;
+    if (typeof s.notifications === 'boolean') out.settings.notifications = s.notifications;
   }
   // Fields added in 3.2: a 3.1 save simply lacks them and gets the defaults.
   const x = data as { lives?: Partial<Lives>; coins?: unknown; daily?: Partial<Daily> };

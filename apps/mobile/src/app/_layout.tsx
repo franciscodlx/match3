@@ -1,13 +1,19 @@
 import { useEffect } from 'react';
 import { Stack } from 'expo-router';
 import { StatusBar } from 'expo-status-bar';
-import { StyleSheet } from 'react-native';
+import { AppState, StyleSheet } from 'react-native';
 import { GestureHandlerRootView } from 'react-native-gesture-handler';
 import { initFeedback } from '../game/feedback';
+import { syncNotifications } from '../store/notifications';
 import { colors } from '../theme';
 
 export default function RootLayout() {
   useEffect(() => initFeedback(), []);
+  // Leaving the app is when reminders matter: schedule them from the latest progress.
+  useEffect(() => {
+    const sub = AppState.addEventListener('change', (st) => st !== 'active' && syncNotifications());
+    return () => sub.remove();
+  }, []);
   return (
     <GestureHandlerRootView style={styles.root}>
       <Stack screenOptions={{ headerShown: false, contentStyle: { backgroundColor: colors.bg } }}>

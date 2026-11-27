@@ -3,12 +3,13 @@ import { router } from 'expo-router';
 import Constants from 'expo-constants';
 import { addCoins, livesAt, refillLives, totalStars, updateSettings } from '@match3/meta';
 import { devClock, now, today, useNow } from '../store/clock';
+import { devListPending, devTestNotification, enableFromSettings } from '../store/notifications';
 import { resetProgress, setProgress, useProgress } from '../store/progress';
 import { colors as theme } from '../theme';
 
 export default function Settings() {
   const progress = useProgress();
-  const { sound, haptics } = progress.settings;
+  const { sound, haptics, notifications } = progress.settings;
   const beaten = Object.values(progress.levels).filter((l) => l.wins > 0).length;
   useNow(); // keep the dev clock readout fresh
 
@@ -31,6 +32,15 @@ export default function Settings() {
         <Row label="Sonido" value={sound} onChange={(v) => setProgress((p) => updateSettings(p, { sound: v }))} />
         <View style={styles.sep} />
         <Row label="Vibración" value={haptics} onChange={(v) => setProgress((p) => updateSettings(p, { haptics: v }))} />
+        <View style={styles.sep} />
+        <Row
+          label="Avisos (vidas y recompensas)"
+          value={notifications}
+          onChange={async (v) => {
+            if (v && !(await enableFromSettings())) return;
+            setProgress((p) => updateSettings(p, { notifications: v }));
+          }}
+        />
       </View>
 
       <View style={styles.group}>
@@ -56,6 +66,8 @@ export default function Settings() {
               ['Reloj real', () => devClock.reset()],
               ['Vidas llenas', () => setProgress(refillLives)],
               ['+500 🪙', () => setProgress((p) => addCoins(p, 500))],
+              ['Notificación en 5 s', devTestNotification],
+              ['Ver avisos pendientes', devListPending],
             ].map(([label, fn]) => (
               <Pressable key={label as string} style={styles.devBtn} onPress={fn as () => void}>
                 <Text style={styles.devBtnText}>{label as string}</Text>
