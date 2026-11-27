@@ -148,7 +148,8 @@ export function LevelMap() {
           feedback.win();
           setDailyOpen(false);
           // The moment a reminder makes sense: "we'll tell you when tomorrow's reward is ready".
-          setTimeout(() => askPermissionOnce(), 600);
+          // Asked after the overlay has faded out, so the system alert never overlaps it.
+          setTimeout(() => askPermissionOnce(), 400);
         }}
       />
       <LivesModal visible={noLivesOpen} lives={lives} onClose={() => setNoLivesOpen(false)} />

@@ -1,20 +1,25 @@
-// Map overlays: the daily reward and the "out of lives" wait.
+// Map overlays: the daily reward and the lives wait.
+// Plain in-tree overlays, not RN <Modal>: a native modal presented while another screen (the
+// settings sheet) or a system alert (notification permission) is animating can fail to appear yet
+// stay "open", leaving an invisible layer that eats every touch on the map.
 import type { ReactNode } from 'react';
-import { Modal, Pressable, StyleSheet, Text, View } from 'react-native';
+import { Pressable, StyleSheet, Text, View } from 'react-native';
+import Animated, { FadeIn, FadeOut } from 'react-native-reanimated';
 import { DAILY_COINS, MAX_LIVES, type DailyView, type LivesView } from '@match3/meta';
 import { formatWait } from '../store/clock';
 import { colors as theme } from '../theme';
 
 function Sheet({ visible, onClose, children }: { visible: boolean; onClose: () => void; children: ReactNode }) {
+  if (!visible) return null;
   return (
-    <Modal visible={visible} transparent animationType="fade" onRequestClose={onClose}>
+    <Animated.View entering={FadeIn.duration(160)} exiting={FadeOut.duration(140)} style={styles.layer}>
       <Pressable style={styles.backdrop} onPress={onClose}>
         {/* Inner Pressable swallows taps so only the backdrop closes. */}
         <Pressable style={styles.card} onPress={() => {}}>
           {children}
         </Pressable>
       </Pressable>
-    </Modal>
+    </Animated.View>
   );
 }
 
@@ -89,6 +94,7 @@ export function LivesModal({ visible, lives, onClose }: { visible: boolean; live
 }
 
 const styles = StyleSheet.create({
+  layer: { ...StyleSheet.absoluteFill, zIndex: 10 },
   backdrop: { flex: 1, backgroundColor: 'rgba(8,10,20,0.78)', justifyContent: 'center', padding: 24 },
   card: { backgroundColor: theme.surface, borderRadius: 20, padding: 22, gap: 12 },
   title: { color: theme.text, fontSize: 24, fontWeight: '900', textAlign: 'center' },
